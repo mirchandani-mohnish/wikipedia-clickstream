@@ -49,7 +49,7 @@ def send_to_kafka(extracted_folder, producer, topic):
                     message = line.strip()
                     producer.send(topic, value=message.encode('utf-8'))
                     print(f"Sent: {message}")
-                    # time.sleep(0.1)  # To prevent overwhelming Kafka
+                    time.sleep(0.1)  # To prevent overwhelming Kafka
 
 # Main execution
 if __name__ == "__main__":
