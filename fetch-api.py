@@ -1,48 +1,67 @@
+import os
 import requests
 from bs4 import BeautifulSoup
-import datetime
 
-# Function to fetch the HTML and extract dates
-def fetch_dates(url):
-    try:
-        print("making request")
-        response = requests.get(url)
-        response.raise_for_status()
-        
-        print("parsing data")
-        # Parse the HTML
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Find all <a> tags in the <pre> section
-        pre_section = soup.find('pre')
-        if not pre_section:
-            raise ValueError("No <pre> section found in the HTML.")
-        
-        links = pre_section.find_all('a')
+# Define constants
+define_url = "https://dumps.wikimedia.org/other/clickstream/"
+output_file = "available_dates.txt"
 
-        # Extract the dates (assuming format YYYY-MM)
-        dates = [link.text.strip('/') for link in links if link.text.strip('/').startswith(('19', '20'))]
-        
-        return dates
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return []
+def fetch_dates():
+    """Fetch the list of available dates from the Wikimedia Clickstream page."""
+    response = requests.get(define_url)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
 
-# URL to fetch
+    # Extract dates from the links
+    dates = [a.text.strip('/') for a in soup.find_all('a') if a.text.strip('/').startswith('20')]
+    return dates
+
+def read_local_dates():
+    """Read dates from the local file."""
+    if os.path.exists(output_file):
+        with open(output_file, "r") as file:
+            return file.read().splitlines()
+    return []
+
+def write_dates(dates):
+    """Write dates to the local file."""
+    with open(output_file, "w") as file:
+        file.write("\n".join(dates))
+
+def download_clickstream_data(new_dates):
+    """Download clickstream gzip files for the new dates."""
+    for date in new_dates:
+        file_url = f"{define_url}{date}/clickstream-enwiki-{date}.tsv.gz"
+        local_filename = f"clickstream-enwiki-{date}.tsv.gz"
+        print(f"Downloading {file_url}...")
+        response = requests.get(file_url, stream=True)
+        if response.status_code == 200:
+            with open(local_filename, "wb") as file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    file.write(chunk)
+            print(f"Downloaded {local_filename}")
+        else:
+            print(f"Failed to download {file_url}")
+
 def main():
-    url = "https://dumps.wikimedia.org/other/clickstream"  # Replace with the actual API URL
-    dates = fetch_dates(url)
-    
-    if dates:
-        print("Extracted dates:", dates)
-        
-        # Save dates to a file with a timestamp
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-        with open(f"dates_{today}.txt", "w") as f:
-            f.write("\n".join(dates))
-        print(f"Dates saved to dates_{today}.txt")
+    """Main function to check for updates and download new data."""
+    print("Fetching available dates from the website...")
+    online_dates = fetch_dates()
+    print("Reading local dates...")
+    local_dates = read_local_dates()
+
+    # Find new dates
+    new_dates = sorted(set(online_dates) - set(local_dates))
+    if new_dates:
+        print(f"New dates found: {new_dates}")
+        download_clickstream_data(new_dates)
+
+        # Update the local file
+        updated_dates = sorted(set(local_dates + new_dates))
+        write_dates(updated_dates)
+        print("Local dates file updated.")
     else:
-        print("No dates were found.")
+        print("No new dates found.")
 
 if __name__ == "__main__":
     main()
