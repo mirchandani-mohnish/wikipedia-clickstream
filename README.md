@@ -9,13 +9,27 @@ A Clickstream Analysis Tool for wikipedia
     - downloads the gzip file
     - extracts it
     - sends it to kafka 
-- send kafka data to spark
+    - integrate spark and make workers 
+- send kafka data to spark 
+
 - process spark and store in cassandra
+    - read the particular word in cassandra 
+    - update that in the same with increments to the particular column
 - show cassandra data via visuals 
 
 
 ## Extras 
 - host on azure 
+    - data lake
+    - cosmos db
+    - s3 bucket alternative 
 - try multiple spark instances as workers
 - mock clickstream 
 
+
+
+
+
+
+
+pip install cassandra-driver

@@ -2,6 +2,8 @@ from pyspark.sql import SparkSession
 from kafka import KafkaConsumer
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
+from pyspark.sql.functions import split, col
+
 
 # Kafka consumer parameters
 kafka_bootstrap_servers = 'localhost:9092'
@@ -25,8 +27,9 @@ def consume_from_kafka(topic, bootstrap_servers):
     messages = []
     for message in consumer:
         messages.append(message.value)
+        print(message.value.split())
         if len(messages) >= 1000:  # Process in batches of 1000 messages
-            print(messages)
+           
             yield messages
             messages = []
     if messages:
@@ -44,8 +47,8 @@ def process_with_spark(data):
     
     # Example transformation: Create key-value pairs
     pairs = df.rdd.flatMap(lambda line: [
-        (line.split()[0], line.split()[1]),
-        (line.split()[1], line.split()[0])
+        (line.split('\t')[0], line.split('\t')[1]),
+        (line.split('\t')[1], line.split('\t')[0])
     ])
     
     # Convert to DataFrame
@@ -59,6 +62,44 @@ def process_with_spark(data):
         .save()
     
     spark.stop()
+    
+    
+def streamAndRun(topic, kafka_bootstrap_servers):     
+    # Create Spark session
+    spark = SparkSession.builder \
+        .appName("KafkaSparkConsumer") \
+        .master("local") \
+        .config("spark.cassandra.connection.host", cassandra_host) \
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0") \
+        .getOrCreate()
+
+    # Read data from Kafka
+    df = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", kafka_bootstrap_servers) \
+        .option("subscribe", topic) \
+        .load()
+
+    # Convert the value column to string
+    df = df.selectExpr("CAST(value AS STRING)")
+
+    # Split the value column based on the delimiter and create key-value pairs
+    delimiter = '\t'  # Define your delimiter here
+    pairs = df.withColumn("referrer", split(col("value"), delimiter).getItem(0)) \
+            .withColumn("resource", split(col("value"), delimiter).getItem(1)) \
+            .select("referrer", "resource")
+
+    # Write the results to Cassandra
+    query = pairs.writeStream \
+        .format("org.apache.spark.sql.cassandra") \
+        .option("keyspace", keyspace) \
+        .option("table", table) \
+        .option("checkpointLocation", "/tmp/spark-checkpoints") \
+        .outputMode("append") \
+        .start()
+
+    # Wait for the termination of the query
+    query.awaitTermination()
 
 # Main execution
 if __name__ == "__main__":
@@ -76,5 +117,6 @@ if __name__ == "__main__":
         )
     """)
     
-    for messages in consume_from_kafka(topic, kafka_bootstrap_servers):
-        process_with_spark(messages)
+    streamAndRun(topic, kafka_bootstrap_servers)
+    # for messages in consume_from_kafka(topic, kafka_bootstrap_servers):
+    #     process_with_spark(messages)
