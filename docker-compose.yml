@@ -21,10 +21,33 @@ services:
     ports:
       - "9092:9092"
 
-  spark:
+  cassandra:
+    image: cassandra:latest
+    environment:
+      CASSANDRA_CLUSTER_NAME: "database_cluster"
+      CASSANDRA_DC: "dc1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_LISTEN_ADDRESS: "cassandra"
+      CASSANDRA_BROADCAST_ADDRESS: "cassandra"
+    ports:
+      - "9042:9042" # Cassandra CQL port
+
+  spark-master:
     image: bitnami/spark:latest
-    container_name: spark
+    container_name: spark-master
     environment:
       SPARK_MODE: master
     ports:
       - "8080:8080"
+      - "7077:7077"
+  
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark-worker
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+    ports:
+      - "8081:8081"
+    depends_on:
+      - spark-master

@@ -1,10 +1,18 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
 from kafka import KafkaConsumer
+from cassandra.cluster import Cluster
+from cassandra.query import SimpleStatement
+from pyspark.sql.functions import split, col
+
 
 # Kafka consumer parameters
 kafka_bootstrap_servers = 'localhost:9092'
 topic = 'dataset-topic'
+
+# Cassandra parameters
+cassandra_host = 'localhost'
+keyspace = 'mykeyspace'
+table = 'referrer_resource'
 
 # Function to consume data from Kafka
 def consume_from_kafka(topic, bootstrap_servers):
@@ -19,7 +27,9 @@ def consume_from_kafka(topic, bootstrap_servers):
     messages = []
     for message in consumer:
         messages.append(message.value)
+        print(message.value.split())
         if len(messages) >= 1000:  # Process in batches of 1000 messages
+           
             yield messages
             messages = []
     if messages:
@@ -27,17 +37,86 @@ def consume_from_kafka(topic, bootstrap_servers):
 
 # Function to process data with Spark
 def process_with_spark(data):
-    spark = SparkSession.builder.appName("KafkaSparkConsumer").getOrCreate()
+    spark = SparkSession.builder \
+        .appName("KafkaSparkConsumer") \
+        .master("local") \
+        .config("spark.cassandra.connection.host", cassandra_host) \
+        .getOrCreate()
+    
     df = spark.createDataFrame(data, "string").toDF("line")
     
-    # Example MapReduce operation: Word count
-    words = df.selectExpr("explode(split(line, ' ')) as word")
-    word_counts = words.groupBy("word").count()
+    # Example transformation: Create key-value pairs
+    pairs = df.rdd.flatMap(lambda line: [
+        (line.split('\t')[0], line.split('\t')[1]),
+        (line.split('\t')[1], line.split('\t')[0])
+    ])
     
-    word_counts.show()
+    # Convert to DataFrame
+    pairs_df = pairs.toDF(["referrer", "resource"])
+    
+    # Write to Cassandra
+    pairs_df.write \
+        .format("org.apache.spark.sql.cassandra") \
+        .mode("append") \
+        .options(table=table, keyspace=keyspace) \
+        .save()
+    
     spark.stop()
+    
+    
+def streamAndRun(topic, kafka_bootstrap_servers):     
+    # Create Spark session
+    spark = SparkSession.builder \
+        .appName("KafkaSparkConsumer") \
+        .master("local") \
+        .config("spark.cassandra.connection.host", cassandra_host) \
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0") \
+        .getOrCreate()
+
+    # Read data from Kafka
+    df = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", kafka_bootstrap_servers) \
+        .option("subscribe", topic) \
+        .load()
+
+    # Convert the value column to string
+    df = df.selectExpr("CAST(value AS STRING)")
+
+    # Split the value column based on the delimiter and create key-value pairs
+    delimiter = '\t'  # Define your delimiter here
+    pairs = df.withColumn("referrer", split(col("value"), delimiter).getItem(0)) \
+            .withColumn("resource", split(col("value"), delimiter).getItem(1)) \
+            .select("referrer", "resource")
+
+    # Write the results to Cassandra
+    query = pairs.writeStream \
+        .format("org.apache.spark.sql.cassandra") \
+        .option("keyspace", keyspace) \
+        .option("table", table) \
+        .option("checkpointLocation", "/tmp/spark-checkpoints") \
+        .outputMode("append") \
+        .start()
+
+    # Wait for the termination of the query
+    query.awaitTermination()
 
 # Main execution
 if __name__ == "__main__":
-    for messages in consume_from_kafka(topic, kafka_bootstrap_servers):
-        process_with_spark(messages)
+    # Connect to Cassandra and create keyspace and table if not exists
+    cluster = Cluster([cassandra_host])
+    session = cluster.connect()
+    session.execute(f"""
+        CREATE KEYSPACE IF NOT EXISTS {keyspace}
+        WITH REPLICATION = {{ 'class': 'SimpleStrategy', 'replication_factor': 1 }}
+    """)
+    session.execute(f"""
+        CREATE TABLE IF NOT EXISTS {keyspace}.{table} (
+            referrer text PRIMARY KEY,
+            resource text
+        )
+    """)
+    
+    streamAndRun(topic, kafka_bootstrap_servers)
+    # for messages in consume_from_kafka(topic, kafka_bootstrap_servers):
+    #     process_with_spark(messages)
