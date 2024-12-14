@@ -150,7 +150,25 @@ def main():
     else:
         print("No new dates found.")
 
+def wait_for_cassandra():
+    """Wait for Cassandra to be available."""
+    while True:
+        try:
+            cluster = Cluster([cassandra_host])
+            session = cluster.connect()
+            session.shutdown()
+            cluster.shutdown()
+            print("Cassandra is available.")
+            break
+        except Exception as e:
+            print("Waiting for Cassandra to be available...")
+            time.sleep(5)
+          
+          
 if __name__ == "__main__":
+    
+    wait_for_cassandra()
+    
     cluster = Cluster([cassandra_host])
     session = cluster.connect()
     session.execute(f"""
