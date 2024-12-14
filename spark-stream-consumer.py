@@ -2,7 +2,8 @@ from pyspark.sql import SparkSession
 from kafka import KafkaConsumer
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
-from pyspark.sql.functions import split, col
+from pyspark.sql.functions import split, col, regexp_replace, lower, sum, when,to_timestamp
+
 
 
 # Kafka consumer parameters
@@ -17,7 +18,6 @@ table = 'referrer_resource'
 
 
 def upsert_resource(referrer, resource, type, count):
-    print(count);
     cluster = Cluster([cassandra_host])
     session = cluster.connect(keyspace)
     
@@ -85,7 +85,21 @@ def streamAndRun(topic, kafka_bootstrap_servers):
     #     .option("checkpointLocation", "/tmp/spark-checkpoints") \
     #     .outputMode("append") \
     #     .start()
-    query = pairs.writeStream \
+    
+     # List of values to exclude from normalization
+    exclude_list = ['other-internal', 'other-search', 'other-external', 'other-empty', 'other-other']
+
+    condition_source = ~col("referrer").isin(exclude_list)
+
+    # Apply conditional normalization (replace special characters with spaces)
+    data_normalized = pairs \
+        .withColumn("referrer", when(condition_source, 
+                                 lower(regexp_replace(col("referrer"), r'[^a-zA-Z0-9]', ' '))) \
+                            .otherwise(col("referrer"))) \
+        .withColumn("resource", lower(regexp_replace(col("resource"), r'[^a-zA-Z0-9 ]', ' ')))
+
+
+    query = data_normalized.writeStream \
         .foreachBatch(process_batch) \
         .option("checkpointLocation", "/tmp/spark-checkpoints") \
         .start()
