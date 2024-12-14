@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Search Resource Destination</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>Search Resource Destination</h1>
+  <input id="searchInput" type="text" placeholder="Enter search term" />
+  <button onclick="search()">Search</button>
+  
+  <div id="chartContainer" style="margin-top: 20px;"></div>
+
+  <table id="resultsTable" style="margin-top: 20px; display: none;">
+    <thead>
+      <tr>
+        <th>Search Term</th>
+        <th>Source</th>
+        <th>Type</th>
+        <th>Count</th>
+      </tr>
+    </thead>
+    <tbody id="resultsBody"></tbody>
+  </table>
+
+  <script>
+    function search() {
+      const searchTerm = document.getElementById('searchInput').value;
+      axios.get('http://localhost:5001/api/search', { params: { term: searchTerm } })
+        .then(response => {
+          const results = response.data;
+
+          const table = document.getElementById('resultsTable');
+          const tbody = document.getElementById('resultsBody');
+          const chartContainer = document.getElementById('chartContainer');
+
+          // Clear previous results
+          tbody.innerHTML = '';
+          chartContainer.innerHTML = ''; // Clear any previous charts
+
+          // Group data by source for chart creation
+          const dataBySource = {};
+          results.forEach(row => {
+            if (!dataBySource[row.source]) {
+              dataBySource[row.source] = [];
+            }
+            dataBySource[row.source].push(row);
+          });
+
+          // Add rows to table
+          results.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${row.search_term}</td>
+              <td>${row.source}</td>
+              <td>${row.type}</td>
+              <td>${row.count}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+
+          // Display table if results exist
+          table.style.display = results.length > 0 ? 'block' : 'none';
+
+          // Create a chart for each source
+          Object.keys(dataBySource).forEach(source => {
+            const sourceData = dataBySource[source];
+
+            // Create a canvas for the chart
+            const canvas = document.createElement('canvas');
+            canvas.id = `chart-${source}`;
+            canvas.style.marginBottom = '40px';
+            chartContainer.appendChild(canvas);
+
+            // Prepare data for Chart.js
+            const labels = sourceData.map(row => row.type);
+            const counts = sourceData.map(row => row.count);
+
+            // Create the chart
+            new Chart(canvas, {
+              type: 'bar',
+              data: {
+                labels: labels,
+                datasets: [{
+                  label: `Counts for Source: ${source}`,
+                  data: counts,
+                  backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                  borderColor: 'rgba(75, 192, 192, 1)',
+                  borderWidth: 1
+                }]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: { display: true },
+                  title: {
+                    display: true,
+                    text: `Counts by Type for Source: ${source}`
+                  }
+                },
+                scales: {
+                  y: { beginAtZero: true }
+                }
+              }
+            });
+          });
+        })
+        .catch(err => {
+          console.error('Error fetching search results:', err);
+        });
+    }
+  </script>
+</body>
+</html>
