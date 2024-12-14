@@ -1,26 +1,22 @@
 from pyspark.sql import SparkSession
-from kafka import KafkaConsumer
-from cassandra.cluster import Cluster
-from cassandra.query import SimpleStatement
 from pyspark.sql.functions import split, col
-
 
 # Kafka consumer parameters
 kafka_bootstrap_servers = 'localhost:9092'
 topic = 'dataset-topic'
 
-# Cassandra parameters
-cassandra_host = 'localhost'
-keyspace = 'mykeyspace'
-table = 'referrer_resource'
+# Elasticsearch parameters
+es_host = 'http://localhost:9201'
+es_index = 'referrer_resource'
 
 def streamAndRun(topic, kafka_bootstrap_servers):     
     # Create Spark session
     spark = SparkSession.builder \
         .appName("KafkaSparkConsumer") \
         .master("local[*]") \
-        .config("spark.cassandra.connection.host", cassandra_host) \
-        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0") \
+        .config("spark.es.nodes", es_host) \
+        .config("spark.es.port", "9201") \
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,org.elasticsearch:elasticsearch-spark-30_2.12:8.9.0") \
         .getOrCreate()
 
     # Read data from Kafka
@@ -39,11 +35,11 @@ def streamAndRun(topic, kafka_bootstrap_servers):
             .withColumn("resource", split(col("value"), delimiter).getItem(1)) \
             .select("referrer", "resource")
 
-    # Write the results to Cassandra
+    # Write the results to Elasticsearch
     query = pairs.writeStream \
-        .format("org.apache.spark.sql.cassandra") \
-        .option("keyspace", keyspace) \
-        .option("table", table) \
+        .format("org.elasticsearch.spark.sql") \
+        .option("es.resource", es_index) \
+        .option("es.nodes", es_host) \
         .option("checkpointLocation", "/tmp/spark-checkpoints") \
         .outputMode("append") \
         .start()
@@ -53,18 +49,4 @@ def streamAndRun(topic, kafka_bootstrap_servers):
 
 # Main execution
 if __name__ == "__main__":
-    # Connect to Cassandra and create keyspace and table if not exists
-    cluster = Cluster([cassandra_host])
-    session = cluster.connect()
-    session.execute(f"""
-        CREATE KEYSPACE IF NOT EXISTS {keyspace}
-        WITH REPLICATION = {{ 'class': 'SimpleStrategy', 'replication_factor': 1 }}
-    """)
-    session.execute(f"""
-        CREATE TABLE IF NOT EXISTS {keyspace}.{table} (
-            referrer text PRIMARY KEY,
-            resource text
-        )
-    """)
-    
     streamAndRun(topic, kafka_bootstrap_servers)
