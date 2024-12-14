@@ -42,22 +42,22 @@ def download_and_process(date, data_folder, topic):
     file_url = f"{define_url}{date}/clickstream-enwiki-{date}.tsv.gz"
     local_filename = f"{data_folder}/clickstream-enwiki-{date}.tsv.gz"
     print(f"Downloading {file_url}...")
-    response = requests.get(file_url, stream=True)
-    if response.status_code == 200:
-        with open(local_filename, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
-        print(f"Downloaded {local_filename}")
-        
-        extracted_file = unzip_dataset(local_filename, f"{data_folder}/clickstream-enwiki-{date}.tsv")
-        if extracted_file:
-            producer = KafkaProducer(bootstrap_servers=kafka_bootstrap_servers)
-            send_to_kafka(extracted_file, producer, topic)
-        
-        # Close the Kafka producer
+    # response = requests.get(file_url, stream=True)
+    # if response.status_code == 200:
+    # with open(local_filename, "wb") as file:
+    #     for chunk in response.iter_content(chunk_size=8192):
+    #         file.write(chunk)
+    print(f"Downloaded {local_filename}")
+    
+    extracted_file = unzip_dataset(local_filename, f"{data_folder}/clickstream-enwiki-{date}.tsv")
+    if extracted_file:
+        producer = KafkaProducer(bootstrap_servers=kafka_bootstrap_servers)
+        send_to_kafka(extracted_file, producer, topic)
+    
+    # Close the Kafka producer
         producer.close()
-    else:
-        print(f"Failed to download {file_url}")
+    # else:
+    #     print(f"Failed to download {file_url}")
 
 def unzip_dataset(zip_path, extract_to):
     """Unzip the downloaded file."""
@@ -78,7 +78,7 @@ def send_to_kafka(file_path, producer, topic):
             message = line.strip()
             producer.send(topic, value=message.encode('utf-8'))
             print(f"Sent: {message}")
-            time.sleep(0.05)
+            time.sleep(0.1)
 
 def process_with_spark(spark, dates, data_folder, topic):
     """Process the dates with Spark."""
@@ -88,16 +88,17 @@ def process_with_spark(spark, dates, data_folder, topic):
 def main():
     """Main function to check for updates and download new data."""
     print("Fetching available dates from the website...")
-    online_dates = fetch_dates()
+    # online_dates = fetch_dates()
     print("Reading local dates...")
-    local_dates = read_local_dates()
+    # local_dates = read_local_dates()
     
     data_folder = "./data"
     os.makedirs(data_folder, exist_ok=True)
 
     
     # Find new dates
-    new_dates = sorted(set(online_dates) - set(local_dates))
+    # new_dates = sorted(set(online_dates) - set(local_dates))
+    new_dates = ["2018-01", "2017-11"]
     if new_dates:
         print(f"New dates found: {new_dates}")
         
@@ -113,8 +114,8 @@ def main():
         process_with_spark(spark, new_dates, data_folder, topic)
 
         # Update the local file
-        updated_dates = sorted(set(local_dates + new_dates))
-        write_dates(updated_dates)
+        updated_dates = sorted(set(new_dates))
+        # write_dates(updated_dates)
         print("Local dates file updated.")
         
     else:

@@ -21,16 +21,16 @@ services:
     ports:
       - "9092:9092"
 
-  # cassandra:
-  #   image: cassandra:latest
-  #   environment:
-  #     CASSANDRA_CLUSTER_NAME: "database_cluster"
-  #     CASSANDRA_DC: "dc1"
-  #     CASSANDRA_RACK: "rack1"
-  #     CASSANDRA_LISTEN_ADDRESS: "cassandra"
-  #     CASSANDRA_BROADCAST_ADDRESS: "cassandra"
-  #   ports:
-  #     - "9042:9042" # Cassandra CQL port
+  cassandra:
+    image: cassandra:latest
+    environment:
+      CASSANDRA_CLUSTER_NAME: "database_cluster"
+      CASSANDRA_DC: "dc1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_LISTEN_ADDRESS: "cassandra"
+      CASSANDRA_BROADCAST_ADDRESS: "cassandra"
+    ports:
+      - "9042:9042" # Cassandra CQL port
 
   spark-master:
     image: bitnami/spark:latest
@@ -54,31 +54,31 @@ services:
 
     # Modified Elasticsearch cluster configuration for fault tolerance
  # Modified Elasticsearch cluster configuration for fault tolerance
-  elasticsearch1:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
-    hostname: elasticsearch1
-    container_name: elasticsearch1
-    environment:
-      - discovery.type=single-node
-      - cluster.name=es-docker-cluster
-      - bootstrap.memory_lock=true
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
-      - _JAVA_OPTIONS=-Xms1g -Xmx1g
-      - xpack.security.enabled=false
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    ports:
-      - "9201:9200"
+  # elasticsearch1:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+  #   hostname: elasticsearch1
+  #   container_name: elasticsearch1
+  #   environment:
+  #     - discovery.type=single-node
+  #     - cluster.name=es-docker-cluster
+  #     - bootstrap.memory_lock=true
+  #     - ES_JAVA_OPTS=-Xms1g -Xmx1g
+  #     - _JAVA_OPTIONS=-Xms1g -Xmx1g
+  #     - xpack.security.enabled=false
+  #   ulimits:
+  #     memlock:
+  #       soft: -1
+  #       hard: -1
+  #   ports:
+  #     - "9201:9200"
 
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.9.0
-    hostname: kibana
-    container_name: kibana
-    depends_on:
-      - elasticsearch1
-    environment:
-      ELASTICSEARCH_HOSTS: '["http://elasticsearch1:9200"]'
-    ports:
-      - "5601:5601"
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.9.0
+  #   hostname: kibana
+  #   container_name: kibana
+  #   depends_on:
+  #     - elasticsearch1
+  #   environment:
+  #     ELASTICSEARCH_HOSTS: '["http://elasticsearch1:9200"]'
+  #   ports:
+  #     - "5601:5601"

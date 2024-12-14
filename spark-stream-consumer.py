@@ -14,6 +14,41 @@ cassandra_host = 'localhost'
 keyspace = 'mykeyspace'
 table = 'referrer_resource'
 
+
+
+def upsert_resource(referrer, resource, type, count):
+    print(count);
+    cluster = Cluster([cassandra_host])
+    session = cluster.connect(keyspace)
+    
+    # Upsert the resource pair
+    update_query = SimpleStatement(f"""
+        UPDATE {table}
+        SET count = count + %s
+        WHERE referrer = %s AND resource = %s
+        IF EXISTS;
+    """)
+    # Attempt to update; if not successful, insert instead
+    result = session.execute(update_query, (count, referrer, resource))
+    if not result[0].applied:
+        # Insert if the row does not exist
+        insert_query = SimpleStatement(f"""
+            INSERT INTO {table} (referrer, resource,type, count)
+            VALUES (%s, %s, %s, %s)
+            IF NOT EXISTS;
+        """)
+        session.execute(insert_query, (referrer, resource, type, count))
+    
+    session.shutdown()
+    cluster.shutdown()
+
+
+def process_batch(batch_df, batch_id):
+    records = batch_df.collect()
+    for record in records:
+        upsert_resource(record['referrer'], record['resource'], record['type'], record['count'])
+
+
 def streamAndRun(topic, kafka_bootstrap_servers):     
     # Create Spark session
     spark = SparkSession.builder \
@@ -27,6 +62,7 @@ def streamAndRun(topic, kafka_bootstrap_servers):
     df = spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", kafka_bootstrap_servers) \
+        .option("failOnDataLoss", "false") \
         .option("subscribe", topic) \
         .load()
 
@@ -37,15 +73,21 @@ def streamAndRun(topic, kafka_bootstrap_servers):
     delimiter = '\t'  # Define your delimiter here
     pairs = df.withColumn("referrer", split(col("value"), delimiter).getItem(0)) \
             .withColumn("resource", split(col("value"), delimiter).getItem(1)) \
-            .select("referrer", "resource")
+            .withColumn("type", split(col("value"), delimiter).getItem(2)) \
+            .withColumn("count", split(col("value"), delimiter).getItem(3).cast("bigint")) \
+            .select("referrer", "resource", "type", "count")
 
     # Write the results to Cassandra
+    # query = pairs.writeStream \
+    #     .format("org.apache.spark.sql.cassandra") \
+    #     .option("keyspace", keyspace) \
+    #     .option("table", table) \
+    #     .option("checkpointLocation", "/tmp/spark-checkpoints") \
+    #     .outputMode("append") \
+    #     .start()
     query = pairs.writeStream \
-        .format("org.apache.spark.sql.cassandra") \
-        .option("keyspace", keyspace) \
-        .option("table", table) \
+        .foreachBatch(process_batch) \
         .option("checkpointLocation", "/tmp/spark-checkpoints") \
-        .outputMode("append") \
         .start()
 
     # Wait for the termination of the query
@@ -62,8 +104,11 @@ if __name__ == "__main__":
     """)
     session.execute(f"""
         CREATE TABLE IF NOT EXISTS {keyspace}.{table} (
-            referrer text PRIMARY KEY,
-            resource text
+            referrer text,
+            resource text,
+            type text,
+            count BIGINT,
+            PRIMARY KEY (referrer, resource)
         )
     """)
     
