@@ -2,7 +2,7 @@ from pyspark.sql import SparkSession
 from kafka import KafkaConsumer
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
-from pyspark.sql.functions import split, col, regexp_replace, lower, sum, when,to_timestamp
+from pyspark.sql.functions import split, col, regexp_replace, lower, sum, when, current_timestamp
 from pyspark.sql.types import IntegerType
 
 
@@ -63,7 +63,7 @@ def streamAndRun(topic, kafka_bootstrap_servers):
     # Wait for the termination of the query
     query.awaitTermination()
 
-def preprocess_and_write(topic, kafka_bootstrap_servers):
+def stream_preprocess_and_write(topic, kafka_bootstrap_servers):
     # Create Spark session
     spark = SparkSession.builder \
         .appName("KafkaSparkConsumer") \
@@ -88,7 +88,11 @@ def preprocess_and_write(topic, kafka_bootstrap_servers):
              .withColumn("search_term", split(col("value"), delimiter).getItem(1)) \
              .withColumn("type", split(col("value"), delimiter).getItem(2)) \
              .withColumn("count", split(col("value"), delimiter).getItem(3).cast(IntegerType()))\
-             .select("search_term", "source", "type", "count")
+             .withColumn("timestamp", current_timestamp())\
+             .select("search_term", "source", "type", "count", "timestamp")
+    
+    # Apply a watermark for late-arriving data
+    data_with_watermark = data.withWatermark("timestamp", "10 minutes")
 
     # Define the condition for rows to be normalized
     # List of values to exclude from normalization
@@ -97,33 +101,29 @@ def preprocess_and_write(topic, kafka_bootstrap_servers):
     condition_source = ~col("source").isin(exclude_list)
 
     # Apply conditional normalization (replace special characters with spaces)
-    data_normalized = data \
+    data_normalized = data_with_watermark \
         .withColumn("source", when(condition_source, 
                                  lower(regexp_replace(col("source"), r'[^a-zA-Z0-9]', ' '))) \
                             .otherwise(col("source"))) \
         .withColumn("search_term", lower(regexp_replace(col("search_term"), r'[^a-zA-Z0-9 ]', ' ')))
 
     # For Trending Topics Table
-    # Add a dummy timestamp column if it doesn't exist
-    # data_with_timestamp = data_normalized.withColumn("timestamp", to_timestamp(col("count")))  # Replace with real timestamp if available
+    # Aggregate data to compute total traffic count per search_term
+    trending_data = data_normalized.groupBy("search_term").agg(sum("count").alias("traffic_count"))
 
-    # Add watermark
-    # trending_data = data_with_timestamp \
-    #     .withWatermark("timestamp", "10 minutes") \
-    #     .groupBy("search_term") \
-    #     .agg(sum("count").alias("traffic_count"))
-
-    # Write Trending Topics Data to Cassandra
-    # trending_query = trending_data.writeStream \
-    #     .format("org.apache.spark.sql.cassandra") \
-    #     .option("keyspace", keyspace) \
-    #     .option("table", table2) \
-    #     .outputMode("append") \
-    #     .option("checkpointLocation", "/tmp/trending-checkpoints") \
-    #     .start()
+    # Write the aggregated data to Cassandra
+    trending_query = trending_data.writeStream \
+        .format("org.apache.spark.sql.cassandra") \
+        .option("keyspace", keyspace) \
+        .option("table", table2) \
+        .outputMode("complete") \
+        .option("checkpointLocation", "/tmp/trending-checkpoints") \
+        .option("confirm.truncate", "true")\
+        .start()
+    # .option("confirm.truncate", "true") \
 
     # Write Source-Destination Data to Cassandra
-    source_dest_query = data_normalized.writeStream \
+    source_dest_query = data_normalized.select("search_term", "source", "type", "count").writeStream \
         .format("org.apache.spark.sql.cassandra") \
         .option("keyspace", keyspace) \
         .option("table", table1) \
@@ -132,7 +132,7 @@ def preprocess_and_write(topic, kafka_bootstrap_servers):
         .start()
 
     # Wait for termination
-    # trending_query.awaitTermination()
+    trending_query.awaitTermination()
     source_dest_query.awaitTermination()
 
 
@@ -168,7 +168,7 @@ if __name__ == "__main__":
         )
     """)
     
-    preprocess_and_write(topic, kafka_bootstrap_servers)
+    stream_preprocess_and_write(topic, kafka_bootstrap_servers)
     
     # streamAndRun(topic, kafka_bootstrap_servers)
     # for messages in consume_from_kafka(topic, kafka_bootstrap_servers):
