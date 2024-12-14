@@ -7,22 +7,15 @@ const client = new cassandra.Client({
     keyspace: 'mykeyspace'      // Optional: Use your keyspace if set
   });
 
-// Function to test connection
-async function testConnection() {
-  try {
-    await client.connect();
-    console.log('Connected to Cassandra successfully!');
-    
-    // Example query to fetch data
-    const query = 'SELECT * FROM resource_destination LIMIT 1';
-    const result = await client.execute(query);
-    console.log('Sample Data:', result.rows);
-  } catch (err) {
-    console.error('Error connecting to Cassandra:', err);
-  } finally {
-    await client.shutdown();
-  }
-}
+const getSearchResults = async (searchTerm) => {
+    const query = `
+      SELECT * FROM resource_destination 
+      WHERE search_term = ? ALLOW FILTERING`;
+    const result = await client.execute(query, [searchTerm], { prepare: true });
+    return result.rows; // Return matching rows
+};
+  
+module.exports = {
+    getSearchResults,
+};
 
-// Run the connection test
-testConnection();
