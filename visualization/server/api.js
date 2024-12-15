@@ -1,6 +1,7 @@
-const express = require('express');
+import express from 'express';
+import { getSearchResults } from './connection.js';
+
 const router = express.Router();
-const { getSearchResults } = require('./connection.js');
 
 // Endpoint to fetch search results
 router.get('/search', async (req, res) => {
@@ -51,5 +52,4 @@ function process_results(results) {
   return results;
 }
 
-
-module.exports = router;
+export default router;

@@ -1,4 +1,4 @@
-const cassandra = require('cassandra-driver');
+import cassandra from 'cassandra-driver';
 
 // Configure the Cassandra client
 const client = new cassandra.Client({
@@ -7,7 +7,7 @@ const client = new cassandra.Client({
     keyspace: 'mykeyspace'      // Optional: Use your keyspace if set
   });
 
-  const getSearchResults = async (searchTerm) => {
+  export const getSearchResults = async (searchTerm) => {
     const normalizedSearchTerm= normalizeSearchTerm(searchTerm);
 
     // Query for incoming branches (searchTerm as the resource)
@@ -41,9 +41,4 @@ const client = new cassandra.Client({
       .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
       .trim(); // Trim leading and trailing whitespace
   }
-  
-  
-module.exports = {
-    getSearchResults,
-};
 
