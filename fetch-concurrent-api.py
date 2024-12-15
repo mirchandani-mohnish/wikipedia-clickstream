@@ -80,7 +80,16 @@ def download_and_process(date, data_folder, topic):
         
         extracted_file = unzip_dataset(local_filename, f"{data_folder}/clickstream-enwiki-{date}.tsv")
         if extracted_file:
-            producer = KafkaProducer(bootstrap_servers=kafka_bootstrap_servers)
+            producer = KafkaProducer(
+                bootstrap_servers=kafka_bootstrap_servers,
+                acks='all',
+                retries=5,
+                batch_size=16384,
+                linger_ms=10,
+                buffer_memory=33554432,
+                max_in_flight_requests_per_connection=5,
+                compression_type='gzip'
+            )
             send_to_kafka(extracted_file, producer, topic)
         
         # Close the Kafka producer
@@ -107,7 +116,6 @@ def send_to_kafka(file_path, producer, topic):
             message = line.strip()
             producer.send(topic, value=message.encode('utf-8'))
             print(f"Sent: {message}")
-            time.sleep(0.05)
 
 def process_with_spark(spark, dates, data_folder, topic):
     """Process the dates with Spark."""

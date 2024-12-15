@@ -17,11 +17,11 @@ table = 'referrer_resource'
 
 
 
-def upsert_resource(referrer, resource, type, count):
-    cluster = Cluster([cassandra_host])
-    session = cluster.connect(keyspace)
+def upsert_resource( session, referrer, resource, type, count):
     
+
     # Upsert the resource pair
+    
     update_query = SimpleStatement(f"""
         UPDATE {table}
         SET count = count + %s
@@ -39,17 +39,21 @@ def upsert_resource(referrer, resource, type, count):
         """)
         session.execute(insert_query, (referrer, resource, type, count))
     
-    session.shutdown()
-    cluster.shutdown()
 
 
-def process_batch(batch_df, batch_id):
+def process_batch(session, batch_df, batch_id):
     records = batch_df.collect()
+    ctr = 0
+    
     for record in records:
-        upsert_resource(record['referrer'], record['resource'], record['type'], record['count'])
+        ctr += 1
+        if(ctr % 1000 == 0):
+            print(f"Processed {ctr} records")
+        upsert_resource(session, record['referrer'], record['resource'], record['type'], record['count'])
+    
 
 
-def streamAndRun(topic, kafka_bootstrap_servers):     
+def streamAndRun(session, topic, kafka_bootstrap_servers):     
     # Create Spark session
     spark = SparkSession.builder \
         .appName("KafkaSparkConsumer") \
@@ -68,6 +72,8 @@ def streamAndRun(topic, kafka_bootstrap_servers):
 
     # Convert the value column to string
     df = df.selectExpr("CAST(value AS STRING)")
+    
+    
 
     # Split the value column based on the delimiter and create key-value pairs
     delimiter = '\t'  # Define your delimiter here
@@ -98,11 +104,21 @@ def streamAndRun(topic, kafka_bootstrap_servers):
                             .otherwise(col("referrer"))) \
         .withColumn("resource", lower(regexp_replace(col("resource"), r'[^a-zA-Z0-9 ]', ' ')))
 
+    # Repartition the DataFrame to increase parallelism
+    # data_normalized = data_normalized.repartition(10)
 
+
+    # query = data_normalized.writeStream \
+    #     .foreachBatch(process_batch) \
+    #     .option("checkpointLocation", "/tmp/spark-checkpoints") \
+    #     .start()
+    
     query = data_normalized.writeStream \
-        .foreachBatch(process_batch) \
+        .foreachBatch(lambda batch_df, batch_id: process_batch(session, batch_df, batch_id)) \
         .option("checkpointLocation", "/tmp/spark-checkpoints") \
         .start()
+    
+
 
     # Wait for the termination of the query
     query.awaitTermination()
@@ -125,5 +141,8 @@ if __name__ == "__main__":
             PRIMARY KEY (referrer, resource)
         )
     """)
+    session = cluster.connect(keyspace)
     
-    streamAndRun(topic, kafka_bootstrap_servers)
+    streamAndRun(session, topic, kafka_bootstrap_servers)
+    session.shutdown()
+    cluster.shutdown()
