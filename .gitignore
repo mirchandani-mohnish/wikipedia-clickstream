@@ -31,3 +31,5 @@ replay_pid*
 
 extracted_data/
 dataset.gz
+
+node_modules/
