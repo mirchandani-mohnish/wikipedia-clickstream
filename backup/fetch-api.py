@@ -92,7 +92,8 @@ def main():
     print("Reading local dates...")
     local_dates = read_local_dates()
     
-    data_folder = "./data"
+    # data_folder = "./data"
+    data_folder = "./dummy-data"
 
     producer = KafkaProducer(bootstrap_servers=kafka_bootstrap_servers)
     

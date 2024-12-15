@@ -17,7 +17,12 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_NUM_PARTITIONS: 10
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_LOG_RETENTION_BYTES: -1
+      KAFKA_LOG_CLEANER_ENABLE: "true"
     ports:
       - "9092:9092"
 
@@ -32,22 +37,53 @@ services:
     ports:
       - "9042:9042" # Cassandra CQL port
 
-  spark-master:
-    image: bitnami/spark:latest
-    container_name: spark-master
-    environment:
-      SPARK_MODE: master
-    ports:
-      - "8080:8080"
-      - "7077:7077"
+  # spark-master:
+  #   image: bitnami/spark:latest
+  #   container_name: spark-master
+  #   environment:
+  #     SPARK_MODE: master
+  #   ports:
+  #     - "8080:8080"
+  #     - "7077:7077"
   
-  spark-worker:
-    image: bitnami/spark:latest
-    container_name: spark-worker
-    environment:
-      SPARK_MODE: worker
-      SPARK_MASTER_URL: spark://spark-master:7077
-    ports:
-      - "8081:8081"
-    depends_on:
-      - spark-master
+  # spark-worker:
+  #   image: bitnami/spark:latest
+  #   container_name: spark-worker
+  #   environment:
+  #     SPARK_MODE: worker
+  #     SPARK_MASTER_URL: spark://spark-master:7077
+  #   ports:
+  #     - "8081:8081"
+    # depends_on:
+    #   - spark-master
+
+    # Modified Elasticsearch cluster configuration for fault tolerance
+ # Modified Elasticsearch cluster configuration for fault tolerance
+  # elasticsearch1:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+  #   hostname: elasticsearch1
+  #   container_name: elasticsearch1
+  #   environment:
+  #     - discovery.type=single-node
+  #     - cluster.name=es-docker-cluster
+  #     - bootstrap.memory_lock=true
+  #     - ES_JAVA_OPTS=-Xms1g -Xmx1g
+  #     - _JAVA_OPTIONS=-Xms1g -Xmx1g
+  #     - xpack.security.enabled=false
+  #   ulimits:
+  #     memlock:
+  #       soft: -1
+  #       hard: -1
+  #   ports:
+  #     - "9201:9200"
+
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.9.0
+  #   hostname: kibana
+  #   container_name: kibana
+  #   depends_on:
+  #     - elasticsearch1
+  #   environment:
+  #     ELASTICSEARCH_HOSTS: '["http://elasticsearch1:9200"]'
+  #   ports:
+  #     - "5601:5601"
