@@ -8,12 +8,21 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import split, col
 from pyspark import SparkFiles
 import time
+from cassandra.cluster import Cluster
+from cassandra.query import SimpleStatement
+
 
 # Define constants
 define_url = "https://dumps.wikimedia.org/other/clickstream/"
 output_file = "available_dates.txt"
 kafka_bootstrap_servers = 'localhost:9092'  # Kafka server address
 topic = 'dataset-topic'  # Kafka topic to send the data to
+
+cassandra_host = 'localhost'
+keyspace = 'mykeyspace'
+table = 'referrer_resource'
+
+
 
 def fetch_dates():
     """Fetch the list of available dates from the Wikimedia Clickstream page."""
@@ -52,12 +61,29 @@ def download_and_process(date, data_folder, topic):
     extracted_file = unzip_dataset(local_filename, f"{data_folder}/clickstream-enwiki-{date}.tsv")
     if extracted_file:
         producer = KafkaProducer(bootstrap_servers=kafka_bootstrap_servers)
+        # producer = KafkaProducer(
+        #         bootstrap_servers=kafka_bootstrap_servers,
+        #         acks='all',
+        #         retries=5,
+        #         batch_size=16384,
+        #         linger_ms=10,
+        #         buffer_memory=33554432,
+        #         max_in_flight_requests_per_connection=5,
+        #         compression_type='gzip'
+        #     )
         send_to_kafka(extracted_file, producer, topic)
     
     # Close the Kafka producer
         producer.close()
-    # else:
-    #     print(f"Failed to download {file_url}")
+        # cluster = Cluster([cassandra_host])
+        # session = cluster.connect(keyspace)
+        
+        
+        # write_to_cassandra(session, keyspace, table, extracted_file)
+        # session.shutdown()
+        # cluster.shutdown()
+    else:
+        print(f"Failed to download {file_url}")
 
 def unzip_dataset(zip_path, extract_to):
     """Unzip the downloaded file."""
@@ -73,17 +99,60 @@ def unzip_dataset(zip_path, extract_to):
 
 def send_to_kafka(file_path, producer, topic):
     """Read the unzipped file and send data to Kafka."""
+    cntr = 0
     with open(file_path, 'r') as file:
         for line in file:
             message = line.strip()
             producer.send(topic, value=message.encode('utf-8'))
-            print(f"Sent: {message}")
-            time.sleep(0.1)
+            cntr+=1
+            # time.sleep(0.05)
+            if cntr % 10000 == 0:
+                print(f"Sent: {message}")
+                print(f"Sent: {cntr} rows")
 
 def process_with_spark(spark, dates, data_folder, topic):
     """Process the dates with Spark."""
     rdd = spark.sparkContext.parallelize(dates)
     rdd.foreach(lambda date: download_and_process(date, data_folder, topic))
+    
+def write_to_cassandra(session, keyspace, table, file_path):
+    """Read the unzipped file and write data to Cassandra."""
+    cntr = 0
+    with open(file_path, 'r') as file:
+        for line in file:
+            try:
+                parts = line.strip().split('\t')
+                if len(parts) >= 4:
+                    referrer, resource, type, view_count = parts
+                    
+                    # query = SimpleStatement(f"""
+                        
+                    #     INSERT INTO {keyspace}.{table} (referrer, resource, count, type)
+                    #     VALUES (%s, %s, %s, %s)
+                    # """)
+                    # session.execute(query, (referrer, resource, int(view_count), type))
+                    cntr+=1
+                    if cntr % 1000 == 0:
+                        print(f"Inserted: {referrer}, {resource}, {view_count}, {type}")
+                        print(f"Inserted: {cntr} rows")
+                    update_query = SimpleStatement(f"""
+                        UPDATE {table}
+                        SET count = count + %s
+                        WHERE referrer = %s AND resource = %s
+                        IF EXISTS;
+                    """)
+                    # Attempt to update; if not successful, insert instead
+                    result = session.execute(update_query, (int(view_count), referrer, resource))
+                    if not result[0].applied:
+                        # Insert if the row does not exist
+                        insert_query = SimpleStatement(f"""
+                            INSERT INTO {table} (referrer, resource,type, count)
+                            VALUES (%s, %s, %s, %s)
+                            IF NOT EXISTS;
+                        """)
+                        session.execute(insert_query, (referrer, resource, type, int(view_count)))
+            except Exception as e:
+                print(f"Error inserting line into Cassandra: {e}")
 
 def main():
     """Main function to check for updates and download new data."""
