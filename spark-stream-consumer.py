@@ -52,12 +52,12 @@ def process_batch(session, batch_df, batch_id):
         upsert_resource(session, record['referrer'], record['resource'], record['type'], record['count'])
     
 
-
+# .master("local[*]") \
 def streamAndRun(session, topic, kafka_bootstrap_servers):     
     # Create Spark session
     spark = SparkSession.builder \
         .appName("KafkaSparkConsumer") \
-        .master("local[*]") \
+        .master("spark://localhost:7077") \
         .config("spark.cassandra.connection.host", cassandra_host) \
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,com.datastax.spark:spark-cassandra-connector_2.12:3.3.0") \
         .getOrCreate()
