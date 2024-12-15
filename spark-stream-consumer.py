@@ -3,7 +3,7 @@ from kafka import KafkaConsumer
 from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 from pyspark.sql.functions import split, col, regexp_replace, lower, sum, when,to_timestamp
-
+import time
 
 
 # Kafka consumer parameters
@@ -123,9 +123,25 @@ def streamAndRun(session, topic, kafka_bootstrap_servers):
     # Wait for the termination of the query
     query.awaitTermination()
 
+
+def wait_for_cassandra():
+    """Wait for Cassandra to be available."""
+    while True:
+        try:
+            cluster = Cluster([cassandra_host])
+            session = cluster.connect()
+            session.shutdown()
+            cluster.shutdown()
+            print("Cassandra is available.")
+            break
+        except Exception as e:
+            print("Waiting for Cassandra to be available...")
+            time.sleep(5)
+            
 # Main execution
 if __name__ == "__main__":
-    # Connect to Cassandra and create keyspace and table if not exists
+    
+    wait_for_cassandra()
     cluster = Cluster([cassandra_host])
     session = cluster.connect()
     session.execute(f"""
