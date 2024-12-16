@@ -4,6 +4,7 @@ from cassandra.cluster import Cluster
 from cassandra.query import SimpleStatement
 from pyspark.sql.functions import split, col, regexp_replace, lower, sum, when,to_timestamp
 import time
+import re
 
 
 # Kafka consumer parameters
@@ -14,14 +15,49 @@ topic = 'dataset-topic'
 cassandra_host = 'localhost'
 keyspace = 'mykeyspace'
 table = 'referrer_resource'
+search_table = 'search_index'
+
+# Function to tokenize a string
+def tokenize(value):
+    stop_words = [
+    'a', 'an', 'the', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 
+    'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+    'not', 'no', 'of', 'off', 'in', 'on', 'at', 'by', 'with', 'about', 
+    'into', 'to', 'from', 'up',  'out', 'over', 'under',
+    'I', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'my', 'mine', 
+    'our', 'ours', 'your', 'yours', 'his', 'her', 'its', 'their', 'theirs'
+    ]
+
+    # Combine this with your domain-specific exclude list
+    exclude_list = ['other-internal', 'other-search', 'other-external', 'other-empty', 'other-other']
+    full_exclude_list = set(stop_words + exclude_list)
+    # return [word.lower() for word in regexp_replace(value, r'[^a-zA-Z0-9 ]', ' ').split() if word]
+
+    # Normalize and split into tokens
+    # tokens = [word.lower() for word in regexp_replace(value, r'[^a-zA-Z0-9 ]', ' ').split() if word]
+
+     # Replace non-alphanumeric characters with spaces using re.sub
+    value_cleaned = re.sub(r'[^a-zA-Z0-9 ]', ' ', value)
+    tokens = [word.lower() for word in value_cleaned.split() if word and word not in full_exclude_list]
 
 
+    # Filter out excluded tokens
+    return [token for token in tokens if token not in full_exclude_list]
+
+
+# Function to insert tokens into the search_index table
+def insert_into_search_table(session, resource, term):
+
+    tokens = tokenize(term)
+    insert_query = SimpleStatement(f"""
+        INSERT INTO {search_table} (word, resource) VALUES (%s, %s) IF NOT EXISTS
+    """)
+    for token in set(tokens):  # Use a set to avoid duplicate tokens
+        session.execute(insert_query, (token, resource))
 
 def upsert_resource( session, referrer, resource, type, count):
     
-
     # Upsert the resource pair
-    
     update_query = SimpleStatement(f"""
         UPDATE {table}
         SET count = count + %s
@@ -38,6 +74,11 @@ def upsert_resource( session, referrer, resource, type, count):
             IF NOT EXISTS;
         """)
         session.execute(insert_query, (referrer, resource, type, count))
+
+        # Tokenize and insert referrer and resource into search_index
+    # insert_tokens(session, resource, referrer)
+    insert_into_search_table(session, resource, resource)
+
     
 
 
@@ -157,6 +198,14 @@ if __name__ == "__main__":
             PRIMARY KEY (referrer, resource)
         )
     """)
+    session.execute(f"""
+        CREATE TABLE IF NOT EXISTS mykeyspace.search_index (
+            word TEXT,
+            resource TEXT,
+            PRIMARY KEY (word, resource)
+                )
+    """)
+
     session = cluster.connect(keyspace)
     
     streamAndRun(session, topic, kafka_bootstrap_servers)
