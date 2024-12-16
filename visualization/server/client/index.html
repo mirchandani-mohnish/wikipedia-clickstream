@@ -19,14 +19,23 @@
       </div>
     </div>
 
+    <div id="relatedSearchSection" class="mb-5 d-none">
+      <h6>Related Searches:</h6>
+      <p id="relatedSearchTerms"></p>
+    </div>
+
+    <div id="selectedSearchTermSection" class="mb-4 d-none text-center">
+      <h2 id="selectedSearchTerm" class="text-decoration-underline"></h2>
+    </div>
+
      <!-- Incoming Data -->
     <div id="incomingSection" class="mb-4 d-none">
-      <h2 class="text-center">Incoming Traffic</h2>
+      <h3 class="text-center">Incoming Traffic</h3>
       <table class="table table-striped table-bordered">
         <thead class="table-dark">
           <tr>
+            <th>Search Term</th>
             <th>Referrer</th>
-            <th>Resource</th>
             <th>Type</th>
             <th>Count</th>
           </tr>
@@ -38,12 +47,12 @@
     
      <!-- Outgoing Data -->
     <div id="outgoingSection" class="mb-4 d-none">
-      <h2 class="text-center">Outgoing Traffic</h2>
+      <h3 class="text-center">Outgoing Traffic</h3>
       <table class="table table-striped table-bordered">
         <thead class="table-dark">
           <tr>
+            <th>Search Term</th>
             <th>Referrer</th>
-            <th>Resource</th>
             <th>Type</th>
             <th>Count</th>
           </tr>
@@ -67,6 +76,32 @@
           const { relatedResources , selectedResourceData } = response.data;
           const { selectedResource, incoming, outgoing } = selectedResourceData ;
 
+          // Update Related Searches Section
+          const relatedSearchSection = document.getElementById('relatedSearchSection');
+          const relatedSearchTerms = document.getElementById('relatedSearchTerms');
+
+          if (relatedResources.length > 0) {
+            // Show related searches
+            relatedSearchSection.classList.remove('d-none');
+            relatedSearchTerms.textContent = relatedResources.join(', ');
+          } else {
+            // Hide the related searches section if no related resources
+            relatedSearchSection.classList.add('d-none');
+            relatedSearchTerms.textContent = '';
+          }
+
+          // Update the selected search term heading
+          const selectedSearchTermSection = document.getElementById('selectedSearchTermSection');
+          const selectedSearchTermHeading = document.getElementById('selectedSearchTerm');
+
+          if (selectedResource) {
+            selectedSearchTermSection.classList.remove('d-none');
+            selectedSearchTermHeading.textContent = `Search Results for: ${selectedResource}`;
+          } else {
+            selectedSearchTermSection.classList.add('d-none');
+            selectedSearchTermHeading.textContent = '';
+          }
+
           // Handle incoming data
           const incomingSection = document.getElementById('incomingSection');
           const incomingTableBody = document.getElementById('incomingTableBody');
@@ -77,8 +112,8 @@
             incoming.forEach(row => {
               const tr = document.createElement('tr');
               tr.innerHTML = `
-                <td>${row.referrer}</td>
                 <td>${row.resource}</td>
+                <td>${row.referrer}</td>
                 <td>${row.type}</td>
                 <td>${row.count}</td>
               `;
@@ -99,8 +134,8 @@
             outgoing.forEach(row => {
               const tr = document.createElement('tr');
               tr.innerHTML = `
-                <td>${row.referrer}</td>
                 <td>${row.resource}</td>
+                <td>${row.referrer}</td>
                 <td>${row.type}</td>
                 <td>${row.count}</td>
               `;
@@ -115,7 +150,6 @@
           console.error('Error fetching search results:', err);
         });
     }
-
 
     let outgoingChartInstance = null;
     let incomingChartInstance = null;

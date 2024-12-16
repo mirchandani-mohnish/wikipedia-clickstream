@@ -12,6 +12,7 @@ router.get('/search', async (req, res) => {
 
   try {
     const results = await getSearchResults(term);
+    console.log(results);
     const processed_results = process_results(results);
     res.json(processed_results);
   } catch (err) {
@@ -32,24 +33,47 @@ function process_results(results) {
       .join(' '); // Join back into a single string
   }
 
-  // Process incoming and outgoing results
-  ['incoming', 'outgoing'].forEach(key => {
-    results[key] = results[key]
-      .map(row => {
-        // Process referrer
-        if (!exclude_list.includes(row.referrer)) {
-          row.referrer = toTitleCase(row.referrer);
-        }
-        // Process resource
-        if (!exclude_list.includes(row.resource)) {
-          row.resource = toTitleCase(row.resource);
-        }
-        return row;
-      })
-      .sort((a, b) => b.count - a.count); // Sort by count in descending order
-  });
+  // Step 1: Process relatedResources and exclude selectedResource
+  const processedRelatedResources = results.relatedResources
+    .filter(resource => resource.toLowerCase() !== results.selectedResourceData.selectedResource?.toLowerCase()) // Exclude selected resource
+    .map(resource => {
+      if (!exclude_list.includes(resource)) {
+        return toTitleCase(resource);
+      }
+      return resource; // Keep as-is if in exclude list
+    });
 
-  return results;
+  // Step 2: Process selectedResourceData
+  const processedSelectedResourceData = {
+    ...results.selectedResourceData, // Copy the existing structure
+    selectedResource: results.selectedResourceData.selectedResource
+      ? toTitleCase(results.selectedResourceData.selectedResource)
+      : null, // Format the selected resource if it exists
+    incoming: results.selectedResourceData.incoming.map(row => {
+      if (!exclude_list.includes(row.referrer)) {
+        row.referrer = toTitleCase(row.referrer);
+      }
+      if (!exclude_list.includes(row.resource)) {
+        row.resource = toTitleCase(row.resource);
+      }
+      return row;
+    }).sort((a, b) => b.count - a.count), // Sort by count in descending order
+    outgoing: results.selectedResourceData.outgoing.map(row => {
+      if (!exclude_list.includes(row.referrer)) {
+        row.referrer = toTitleCase(row.referrer);
+      }
+      if (!exclude_list.includes(row.resource)) {
+        row.resource = toTitleCase(row.resource);
+      }
+      return row;
+    }).sort((a, b) => b.count - a.count), // Sort by count in descending order
+  };
+
+  // Step 3: Return the processed results
+  return {
+    relatedResources: processedRelatedResources,
+    selectedResourceData: processedSelectedResourceData,
+  };
 }
 
 export default router;
