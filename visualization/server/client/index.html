@@ -63,7 +63,9 @@
       // Fetch data from the server
       axios.get('http://localhost:5001/api/search', { params: { term: searchTerm } })
         .then(response => {
-          const { incoming, outgoing } = response.data;
+          // const { incoming, outgoing } = response.data;
+          const { relatedResources , selectedResourceData } = response.data;
+          const { selectedResource, incoming, outgoing } = selectedResourceData ;
 
           // Handle incoming data
           const incomingSection = document.getElementById('incomingSection');
